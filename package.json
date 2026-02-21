@@ -1,0 +1,12 @@
+{
+  "name": "void-server",
+  "version": "1.0.0",
+  "description": "Servidor WebSocket do VOID para Gartic.io",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  }
+}
