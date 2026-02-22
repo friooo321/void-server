@@ -33,7 +33,6 @@ async function fetchOG(url) {
       total += value.length;
       if (total > 100_000) { reader.cancel(); break; }
     }
-
     const get = (prop) => {
       const m =
         html.match(new RegExp('<meta[^>]+property=["\']og:' + prop + '["\'][^>]+content=["\']([^"\']*)["\']', 'i')) ||
@@ -41,12 +40,10 @@ async function fetchOG(url) {
         html.match(new RegExp('<meta[^>]+name=["\']' + prop + '["\'][^>]+content=["\']([^"\']*)["\']', 'i'));
       return m ? m[1].trim() : null;
     };
-
     const title       = get('title') || html.match(/<title[^>]*>([^<]{1,120})<\/title>/i)?.[1]?.trim() || null;
     const description = get('description');
     const image       = get('image');
     const siteName    = get('site_name');
-
     if (!title && !image) return null;
     return { title, description, image, siteName, url };
   } catch (_) {
@@ -63,7 +60,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
   if (req.method === 'GET' && req.url?.startsWith('/og')) {
-    const qs   = new URL(req.url, 'http://localhost').searchParams;
+    const qs     = new URL(req.url, 'http://localhost').searchParams;
     const target = qs.get('url');
     if (!target) { res.writeHead(400, {'Content-Type':'application/json'}); res.end('{"error":"missing url"}'); return; }
     const data = await fetchOG(target);
@@ -80,15 +77,13 @@ const server = http.createServer(async (req, res) => {
 const wss = new WebSocket.Server({ server });
 const rooms = {};
 
-// Limite de tamanho de payload (200kb em caracteres JSON)
-const MAX_CODE_SIZE = 5000000; // 5MB
+const MAX_CODE_SIZE = 5_000_000; // 5MB
 const MAX_IMG_SIZE  = 100 * 1024 * 1024; // 100MB
 
 wss.on('connection', (ws) => {
   let currentRoom = null;
 
   ws.on('message', (data) => {
-    // Rejeita mensagens muito grandes (segurança)
     if (data.length > MAX_IMG_SIZE) {
       console.warn('[BLOCKED] Payload muito grande:', data.length);
       return;
@@ -109,6 +104,7 @@ wss.on('connection', (ws) => {
 
       let payload = null;
 
+      // Imagem / vídeo / áudio / gif
       if (msg.type === 'image') {
         payload = JSON.stringify({
           type: 'image',
@@ -119,6 +115,7 @@ wss.on('connection', (ws) => {
         });
       }
 
+      // Typing indicator
       if (msg.type === 'typing') {
         payload = JSON.stringify({
           type:     'typing',
@@ -128,9 +125,9 @@ wss.on('connection', (ws) => {
         });
       }
 
-      // NOVO: broadcast de bloco de código
+      // Bloco de código
       if (msg.type === 'code') {
-        console.log(`[CODE] recebido de ${msg.from}, tamanho=${msg.text?.length}, sala=${currentRoom}`);
+        console.log(`[CODE] de ${msg.from}, tamanho=${msg.text?.length}, sala=${currentRoom}`);
         if (typeof msg.text !== 'string' || msg.text.length > MAX_CODE_SIZE) {
           console.warn('[BLOCKED] Código muito grande ou inválido');
           return;
@@ -144,18 +141,16 @@ wss.on('connection', (ws) => {
         });
       }
 
-      // Reply/Quote message
-      if (msg.type === 'reply') {
-        if (typeof msg.text === 'string' && typeof msg.replyNick === 'string') {
-          payload = JSON.stringify({
-            type: 'reply',
-            from: msg.from,
-            replyNick: msg.replyNick,
-            replyText: (msg.replyText||'').slice(0, 200),
-            text: msg.text.slice(0, 500),
-            ts: Date.now(),
-          });
-        }
+      // ── DELETE mensagem ────────────────────────────────────────────────────
+      if (msg.type === 'delete') {
+        if (typeof msg.msgId !== 'string' || msg.msgId.length > 32) return;
+        console.log(`[DELETE] de ${msg.from}, msgId=${msg.msgId}, sala=${currentRoom}`);
+        payload = JSON.stringify({
+          type:  'delete',
+          from:  msg.from,
+          msgId: msg.msgId,
+          ts:    Date.now(),
+        });
       }
 
       if (payload) {
