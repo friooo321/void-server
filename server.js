@@ -145,18 +145,6 @@ wss.on('connection', (ws) => {
         });
       }
 
-      // ── DELETE mensagem ────────────────────────────────────────────────────
-      if (msg.type === 'delete') {
-        if (typeof msg.msgId !== 'string' || msg.msgId.length > 32) return;
-        console.log(`[DELETE] de ${msg.from}, msgId=${msg.msgId}, sala=${currentRoom}`);
-        payload = JSON.stringify({
-          type:  'delete',
-          from:  msg.from,
-          msgId: msg.msgId,
-          ts:    Date.now(),
-        });
-      }
-
       // ── REACTION ──────────────────────────────────────────────────────────
       if (msg.type === 'reaction') {
         if (typeof msg.msgId !== 'string' || msg.msgId.length > 32) return;
