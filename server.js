@@ -95,7 +95,7 @@ wss.on('connection', (ws) => {
     }
 
     try {
-      const msg = JSON.parse(data);
+      const msg = JSON.parse(data.toString());
 
       if (msg.type === 'join') {
         currentRoom = msg.room;
@@ -130,6 +130,7 @@ wss.on('connection', (ws) => {
 
       // NOVO: broadcast de bloco de código
       if (msg.type === 'code') {
+        console.log(`[CODE] recebido de ${msg.from}, tamanho=${msg.text?.length}, sala=${currentRoom}`);
         if (typeof msg.text !== 'string' || msg.text.length > MAX_CODE_SIZE) {
           console.warn('[BLOCKED] Código muito grande ou inválido');
           return;
