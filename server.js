@@ -80,10 +80,20 @@ const server = http.createServer(async (req, res) => {
 const wss = new WebSocket.Server({ server });
 const rooms = {};
 
+// Limite de tamanho de payload (200kb em caracteres JSON)
+const MAX_CODE_SIZE = 200000;
+const MAX_IMG_SIZE  = 8 * 1024 * 1024; // 8MB base64
+
 wss.on('connection', (ws) => {
   let currentRoom = null;
 
   ws.on('message', (data) => {
+    // Rejeita mensagens muito grandes (segurança)
+    if (data.length > MAX_IMG_SIZE) {
+      console.warn('[BLOCKED] Payload muito grande:', data.length);
+      return;
+    }
+
     try {
       const msg = JSON.parse(data);
 
@@ -95,34 +105,52 @@ wss.on('connection', (ws) => {
         return;
       }
 
-      // Broadcast genérico para image e typing
-      if ((msg.type === 'image' || msg.type === 'typing') && currentRoom && rooms[currentRoom]) {
-        let payload;
+      if (!currentRoom || !rooms[currentRoom]) return;
 
-        if (msg.type === 'image') {
-          payload = JSON.stringify({
-            type: 'image',
-            from: msg.from,
-            img:  msg.img,
-            mime: msg.mime || 'image',
-            ts:   Date.now(),
-          });
-        } else {
-          // typing — não inclui payload pesado, só nick + estado
-          payload = JSON.stringify({
-            type:      'typing',
-            from:      msg.from,
-            isTyping:  !!msg.isTyping,
-            ts:        Date.now(),
-          });
+      let payload = null;
+
+      if (msg.type === 'image') {
+        payload = JSON.stringify({
+          type: 'image',
+          from: msg.from,
+          img:  msg.img,
+          mime: msg.mime || 'image',
+          ts:   Date.now(),
+        });
+      }
+
+      if (msg.type === 'typing') {
+        payload = JSON.stringify({
+          type:     'typing',
+          from:     msg.from,
+          isTyping: !!msg.isTyping,
+          ts:       Date.now(),
+        });
+      }
+
+      // NOVO: broadcast de bloco de código
+      if (msg.type === 'code') {
+        if (typeof msg.text !== 'string' || msg.text.length > MAX_CODE_SIZE) {
+          console.warn('[BLOCKED] Código muito grande ou inválido');
+          return;
         }
+        payload = JSON.stringify({
+          type:     'code',
+          from:     msg.from,
+          text:     msg.text,
+          filename: msg.filename || null,
+          ts:       Date.now(),
+        });
+      }
 
+      if (payload) {
         for (const client of rooms[currentRoom]) {
           if (client !== ws && client.readyState === WebSocket.OPEN) {
             client.send(payload);
           }
         }
       }
+
     } catch (e) {
       console.error('Msg inválida:', e.message);
     }
