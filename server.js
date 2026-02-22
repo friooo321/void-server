@@ -76,6 +76,7 @@ const server = http.createServer(async (req, res) => {
 // ── WebSocket ──────────────────────────────────────────────────────────────
 const wss = new WebSocket.Server({ server });
 const rooms = {};
+const voidUsers = {}; // room -> Map<ws, nick>
 
 const MAX_CODE_SIZE = 5_000_000; // 5MB
 const MAX_IMG_SIZE  = 100 * 1024 * 1024; // 100MB
@@ -98,7 +99,30 @@ wss.on('connection', (ws) => {
         currentRoom = msg.room;
         if (!rooms[currentRoom]) rooms[currentRoom] = new Set();
         rooms[currentRoom].add(ws);
+        if (!voidUsers[currentRoom]) voidUsers[currentRoom] = new Map();
         console.log(`[JOIN] sala=${currentRoom} total=${rooms[currentRoom].size}`);
+        return;
+      }
+
+      // ── VOID ANNOUNCE: usuário tem o mod, registra e anuncia pra sala ──────
+      if (msg.type === 'void_announce') {
+        const nick = typeof msg.nick === 'string' ? msg.nick.slice(0, 32) : '';
+        if (!nick) return;
+        if (!voidUsers[currentRoom]) voidUsers[currentRoom] = new Map();
+        voidUsers[currentRoom].set(ws, nick);
+
+        // Manda pro novo cliente a lista de quem já está com o mod
+        const currentList = [...voidUsers[currentRoom].values()];
+        try { ws.send(JSON.stringify({ type: 'void_users', nicks: currentList })); } catch(_) {}
+
+        // Avisa todo mundo na sala que esse nick tem o mod
+        const announcePayload = JSON.stringify({ type: 'void_user_join', nick });
+        for (const client of rooms[currentRoom]) {
+          if (client !== ws && client.readyState === WebSocket.OPEN) {
+            try { client.send(announcePayload); } catch(_) {}
+          }
+        }
+        console.log(`[VOID] ${nick} anunciou VOID na sala ${currentRoom}. Total VOID: ${voidUsers[currentRoom].size}`);
         return;
       }
 
@@ -185,6 +209,19 @@ wss.on('connection', (ws) => {
 
   ws.on('close', () => {
     if (currentRoom && rooms[currentRoom]) {
+      // Remove do voidUsers e avisa a sala se era usuário VOID
+      if (voidUsers[currentRoom]?.has(ws)) {
+        const nick = voidUsers[currentRoom].get(ws);
+        voidUsers[currentRoom].delete(ws);
+        if (voidUsers[currentRoom].size === 0) delete voidUsers[currentRoom];
+        // Avisa a sala que esse nick saiu do VOID
+        const leavePayload = JSON.stringify({ type: 'void_user_leave', nick });
+        for (const client of rooms[currentRoom]) {
+          if (client.readyState === WebSocket.OPEN) {
+            try { client.send(leavePayload); } catch(_) {}
+          }
+        }
+      }
       rooms[currentRoom].delete(ws);
       if (rooms[currentRoom].size === 0) delete rooms[currentRoom];
     }
