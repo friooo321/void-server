@@ -81,8 +81,8 @@ const wss = new WebSocket.Server({ server });
 const rooms = {};
 
 // Limite de tamanho de payload (200kb em caracteres JSON)
-const MAX_CODE_SIZE = 200000;
-const MAX_IMG_SIZE  = 8 * 1024 * 1024; // 8MB base64
+const MAX_CODE_SIZE = 5000000; // 5MB
+const MAX_IMG_SIZE  = 100 * 1024 * 1024; // 100MB
 
 wss.on('connection', (ws) => {
   let currentRoom = null;
@@ -142,6 +142,20 @@ wss.on('connection', (ws) => {
           filename: msg.filename || null,
           ts:       Date.now(),
         });
+      }
+
+      // Reply/Quote message
+      if (msg.type === 'reply') {
+        if (typeof msg.text === 'string' && typeof msg.replyNick === 'string') {
+          payload = JSON.stringify({
+            type: 'reply',
+            from: msg.from,
+            replyNick: msg.replyNick,
+            replyText: (msg.replyText||'').slice(0, 200),
+            text: msg.text.slice(0, 500),
+            ts: Date.now(),
+          });
+        }
       }
 
       if (payload) {
