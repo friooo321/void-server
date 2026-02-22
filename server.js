@@ -80,6 +80,8 @@ const rooms = {};
 const MAX_CODE_SIZE = 5_000_000; // 5MB
 const MAX_IMG_SIZE  = 100 * 1024 * 1024; // 100MB
 
+const VALID_EMOJIS = new Set(['👍','❤️','😂','😮','🔥','👏','😢','💀']);
+
 wss.on('connection', (ws) => {
   let currentRoom = null;
 
@@ -111,6 +113,7 @@ wss.on('connection', (ws) => {
           from: msg.from,
           img:  msg.img,
           mime: msg.mime || 'image',
+          msgId: msg.msgId || null,
           ts:   Date.now(),
         });
       }
@@ -137,6 +140,7 @@ wss.on('connection', (ws) => {
           from:     msg.from,
           text:     msg.text,
           filename: msg.filename || null,
+          msgId:    msg.msgId || null,
           ts:       Date.now(),
         });
       }
@@ -149,6 +153,21 @@ wss.on('connection', (ws) => {
           type:  'delete',
           from:  msg.from,
           msgId: msg.msgId,
+          ts:    Date.now(),
+        });
+      }
+
+      // ── REACTION ──────────────────────────────────────────────────────────
+      if (msg.type === 'reaction') {
+        if (typeof msg.msgId !== 'string' || msg.msgId.length > 32) return;
+        if (!VALID_EMOJIS.has(msg.emoji)) return; // só emojis permitidos
+        const delta = msg.delta === -1 ? -1 : 1;  // só +1 ou -1
+        payload = JSON.stringify({
+          type:  'reaction',
+          from:  msg.from,
+          msgId: msg.msgId,
+          emoji: msg.emoji,
+          delta: delta,
           ts:    Date.now(),
         });
       }
