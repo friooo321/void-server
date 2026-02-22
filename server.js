@@ -146,17 +146,27 @@ wss.on('connection', (ws) => {
       }
 
       // ── REACTION ──────────────────────────────────────────────────────────
+      // FIX: agora repassa nick e rawText para o receptor poder
+      // recalcular o hash e encontrar a mensagem mesmo que os IDs locais
+      // sejam diferentes entre os clientes (problema me/you do Gartic)
       if (msg.type === 'reaction') {
         if (typeof msg.msgId !== 'string' || msg.msgId.length > 32) return;
-        if (!VALID_EMOJIS.has(msg.emoji)) return; // só emojis permitidos
-        const delta = msg.delta === -1 ? -1 : 1;  // só +1 ou -1
+        if (!VALID_EMOJIS.has(msg.emoji)) return;
+        const delta = msg.delta === -1 ? -1 : 1;
+
+        // Sanitiza nick e rawText (campos opcionais mas necessários para o fix)
+        const nick    = typeof msg.nick === 'string'    ? msg.nick.slice(0, 32)    : '';
+        const rawText = typeof msg.rawText === 'string' ? msg.rawText.slice(0, 80) : '';
+
         payload = JSON.stringify({
-          type:  'reaction',
-          from:  msg.from,
-          msgId: msg.msgId,
-          emoji: msg.emoji,
-          delta: delta,
-          ts:    Date.now(),
+          type:    'reaction',
+          from:    msg.from,
+          msgId:   msg.msgId,
+          emoji:   msg.emoji,
+          delta:   delta,
+          nick:    nick,
+          rawText: rawText,
+          ts:      Date.now(),
         });
       }
 
