@@ -77,10 +77,21 @@ const server = http.createServer(async (req, res) => {
 const wss = new WebSocket.Server({ server });
 const rooms = {};
 
-const MAX_CODE_SIZE = 5_000_000; // 5MB
-const MAX_IMG_SIZE  = 100 * 1024 * 1024; // 100MB
+const MAX_CODE_SIZE  = 5_000_000;   // 5MB
+const MAX_IMG_SIZE   = 100 * 1024 * 1024; // 100MB
+const MAX_AUDIO_SIZE = 20 * 1024 * 1024;  // 20MB áudio gravado
 
+const VALID_MIMES  = new Set(['image','video','audio','gif','image/jpeg','image/png','image/gif','image/webp','video/mp4','audio/mpeg','audio/mp3','audio/ogg','audio/webm']);
 const VALID_EMOJIS = new Set(['👍','❤️','😂','😮','🔥','👏','😢','💀']);
+
+function broadcast(room, payload, exclude) {
+  if (!rooms[room]) return;
+  for (const client of rooms[room]) {
+    if (client !== exclude && client.readyState === WebSocket.OPEN) {
+      client.send(payload);
+    }
+  }
+}
 
 wss.on('connection', (ws) => {
   let currentRoom = null;
@@ -94,6 +105,7 @@ wss.on('connection', (ws) => {
     try {
       const msg = JSON.parse(data.toString());
 
+      // ── JOIN ──────────────────────────────────────────────────────────────
       if (msg.type === 'join') {
         currentRoom = msg.room;
         if (!rooms[currentRoom]) rooms[currentRoom] = new Set();
@@ -106,19 +118,37 @@ wss.on('connection', (ws) => {
 
       let payload = null;
 
-      // Imagem / vídeo / áudio / gif
+      // ── IMAGEM / VÍDEO / ÁUDIO / GIF (arquivo enviado) ───────────────────
       if (msg.type === 'image') {
+        if (!VALID_MIMES.has(msg.mime || '')) return;
         payload = JSON.stringify({
-          type: 'image',
-          from: msg.from,
-          img:  msg.img,
-          mime: msg.mime || 'image',
+          type:  'image',
+          from:  msg.from,
+          img:   msg.img,
+          mime:  msg.mime || 'image',
           msgId: msg.msgId || null,
-          ts:   Date.now(),
+          ts:    Date.now(),
         });
       }
 
-      // Typing indicator
+      // ── ÁUDIO GRAVADO (microfone) ─────────────────────────────────────────
+      if (msg.type === 'audio_recorded') {
+        if (typeof msg.data !== 'string') return;
+        // base64 ~= tamanho real * 1.33 — checa tamanho aproximado
+        if (msg.data.length > MAX_AUDIO_SIZE * 1.4) {
+          console.warn('[BLOCKED] Áudio gravado muito grande');
+          return;
+        }
+        payload = JSON.stringify({
+          type:  'audio_recorded',
+          from:  msg.from,
+          data:  msg.data,
+          msgId: msg.msgId || null,
+          ts:    Date.now(),
+        });
+      }
+
+      // ── TYPING ────────────────────────────────────────────────────────────
       if (msg.type === 'typing') {
         payload = JSON.stringify({
           type:     'typing',
@@ -128,7 +158,7 @@ wss.on('connection', (ws) => {
         });
       }
 
-      // Bloco de código
+      // ── CÓDIGO ────────────────────────────────────────────────────────────
       if (msg.type === 'code') {
         console.log(`[CODE] de ${msg.from}, tamanho=${msg.text?.length}, sala=${currentRoom}`);
         if (typeof msg.text !== 'string' || msg.text.length > MAX_CODE_SIZE) {
@@ -149,11 +179,9 @@ wss.on('connection', (ws) => {
       if (msg.type === 'reaction') {
         if (typeof msg.msgId !== 'string' || msg.msgId.length > 32) return;
         if (!VALID_EMOJIS.has(msg.emoji)) return;
-        const delta = msg.delta === -1 ? -1 : 1;
-
-        const nick    = typeof msg.nick === 'string'    ? msg.nick.slice(0, 32)    : '';
+        const delta   = msg.delta === -1 ? -1 : 1;
+        const nick    = typeof msg.nick    === 'string' ? msg.nick.slice(0, 32)    : '';
         const rawText = typeof msg.rawText === 'string' ? msg.rawText.slice(0, 80) : '';
-
         payload = JSON.stringify({
           type:    'reaction',
           from:    msg.from,
@@ -166,13 +194,7 @@ wss.on('connection', (ws) => {
         });
       }
 
-      if (payload) {
-        for (const client of rooms[currentRoom]) {
-          if (client !== ws && client.readyState === WebSocket.OPEN) {
-            client.send(payload);
-          }
-        }
-      }
+      if (payload) broadcast(currentRoom, payload, ws);
 
     } catch (e) {
       console.error('Msg inválida:', e.message);
