@@ -15,7 +15,7 @@ async function fetchOG(url) {
     if (!res.ok) return null;
     const ct = res.headers.get('content-type') || '';
     if (!ct.includes('text/html')) return null;
-    
+
     const reader = res.body.getReader();
     let html = '';
     let total = 0;
@@ -154,6 +154,21 @@ wss.on('connection', (ws) => {
           msgId: msg.msgId,
           emoji: msg.emoji,
           delta: msg.delta === -1 ? -1 : 1,
+          nick: typeof msg.nick === 'string' ? msg.nick.slice(0, 32) : '',
+          rawText: typeof msg.rawText === 'string' ? msg.rawText.slice(0, 80) : '',
+          ts: Date.now(),
+        });
+      }
+
+      // ── EDIT ──
+      if (msg.type === 'edit') {
+        if (typeof msg.msgId !== 'string' || msg.msgId.length > 64) return;
+        if (typeof msg.newText !== 'string' || msg.newText.length > 2000) return;
+        payload = JSON.stringify({
+          type: 'edit',
+          from: msg.from,
+          msgId: msg.msgId,
+          newText: msg.newText.slice(0, 2000),
           nick: typeof msg.nick === 'string' ? msg.nick.slice(0, 32) : '',
           rawText: typeof msg.rawText === 'string' ? msg.rawText.slice(0, 80) : '',
           ts: Date.now(),
